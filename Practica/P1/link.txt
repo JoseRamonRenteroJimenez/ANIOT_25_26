@@ -1,0 +1,19 @@
+Guía básica ESP-IDF.
+
+https://docs.espressif.com/projects/esp-idf/en/stable/esp32/get-started/index.html
+
+Extensión ESP-IDF para VSCode . 
+
+https://github.com/espressif/vscode-esp-idf-extension
+
+API de ESP-IDF
+
+https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/index.html
+
+Kbuild
+
+https://github.com/torvalds/linux/blob/master/Documentation/kbuild/kconfig-language.rst
+
+Esquemáticos placa DevKitC-v4
+
+https://dl.espressif.com/dl/schematics/esp32_devkitc_v4-sch.pdf
