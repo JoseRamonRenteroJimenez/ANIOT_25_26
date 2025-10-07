@@ -11,7 +11,7 @@ on:
     inputs:
       path:
         description: "Relative path under $GITHUB_WORKSPACE to place the repository"
-        default: "examples/get-started/hello_world"
+        default: "Practica/P2/project-blink_jtag"
         required: false
       esp_idf_version:
         description: "Version of ESP-IDF docker image to use"
@@ -45,10 +45,10 @@ jobs:
       with:
         esp_idf_version: v5.1
         target: esp32c3
-        path: 'examples/get-started/hello_world'
+        path: 'Practica/P2/project-blink_jtag'
     - name: Download built firmware
       uses: actions/upload-artifact@v4
       with:
         name: hello_world.bin
         path: |
-          examples/get-started/hello_world/build/hello_world.bin
+          Practica/P2/project-blink_jtag/build/hello_world.bin
