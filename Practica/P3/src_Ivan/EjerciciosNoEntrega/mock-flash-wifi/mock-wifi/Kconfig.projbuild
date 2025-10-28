@@ -1,0 +1,21 @@
+menu "MOCK_WIFI Configuration"
+
+    config CONNECT_DELAY
+        int "CONNECT DELAY (s)"
+        default 5
+        help
+            Delay seconds between wifi_connect() call and sending event back
+
+    config IP_DELAY
+        int "IP DELAY (s)"
+        default 3
+        help
+            Delay seconds between WIFI_MOCK_EVENT_WIFI_CONNECTED and WIFI_MOCK_EVENT_WIFI_GOT_IP events
+    
+    config DISCONNECT_DELAY
+        int "DISCONNECT_DELAY (s)"
+        default 15
+        help
+            Delay seconds between WIFI_MOCK_EVENT_WIFI_CONNECTED and WIFI_MOCK_EVENT_WIFI_DISCONNECTED events
+
+endmenu
