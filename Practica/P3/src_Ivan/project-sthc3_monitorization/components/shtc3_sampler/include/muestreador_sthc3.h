@@ -11,14 +11,12 @@ typedef struct{
 // -- Events definition
 ESP_EVENT_DECLARE_BASE(SAMPLER_EVENT);
 typedef enum {
-    NEW_DATA,
-    SPARE
+    SAMPLER_INIT,
+    NEW_DATA
 } sampler_event_t;
 
 // Functions
-void init_i2c(i2c_master_bus_config_t conf);
+int init_i2c(i2c_master_bus_config_t conf);
 void sampler_run(esp_event_loop_handle_t event_loop, uint64_t sample_time);
 
-// Private
-void muestreador_task( void * pvParameters );
 
