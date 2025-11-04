@@ -1,0 +1,10 @@
+menu "STHC Monitorization Configuration"
+
+    config SAMPLER_PERIOD_MS
+        int "Sampler period in ms"
+        range 400 3600000
+        default 1000
+        help
+            Define the period in milliseconds between each sample taken by the STHC Monitorization module.
+
+endmenu
