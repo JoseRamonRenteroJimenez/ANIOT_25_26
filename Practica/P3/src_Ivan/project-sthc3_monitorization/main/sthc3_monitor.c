@@ -37,6 +37,8 @@ int init_wifi(){
     int ret = wifi_connect();
     return ret;
 }
+
+
 // -------------- Events -------------- //
 void sampler_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data){
 
@@ -52,8 +54,10 @@ void sampler_event_handler(void* arg, esp_event_base_t event_base, int32_t event
         }
         // Fsm event queue
         fsm_event = FSM_DATA_IN_SENSOR_QUEUE;
-        if (xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY ) != pdPASS ){
-            ESP_LOGE(TAG, "Can't write in queue");
+        if(fsm_status !=  CONSOLE){
+            if (xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY ) != pdPASS ){
+                ESP_LOGE(TAG, "Can't write in queue");
+            }
         }
         break;
     case SAMPLER_INIT:
@@ -105,7 +109,9 @@ void button_event_handler(void* arg, esp_event_base_t base, int32_t id, void* da
         case BUTTON_EVENT_PRESSED:
             ESP_LOGI(TAG, "Botón PRESIONADO");
             fsm_event = FSM_BUTTON_PRESS;
-            xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY);
+            if (xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY ) != pdPASS ){
+                ESP_LOGE(TAG, "Can't write in queue");
+            }
             break;
         case BUTTON_EVENT_RELEASED:
             ESP_LOGI(TAG, "Botón LIBERADO");
@@ -142,6 +148,10 @@ void fsm_control( void * pvParameters ){
                 if (event == FSM_WIFI_GOT_IP){
                     fsm_status = WIFI_MONITOR;
                 }
+                else if (event == FSM_BUTTON_PRESS){
+                    fsm_status = CONSOLE;
+                    ESP_ERROR_CHECK(wifi_disconnect());
+                }
                 break;
             case WIFI_MONITOR:
                 if (event == FSM_WIFI_DISCONNECTED){
@@ -167,6 +177,7 @@ void fsm_control( void * pvParameters ){
             {
             case INIT:
                 init_sampler(SAMPLER_PERIOD_MS);
+                button_init(loop_event_handle);
                 ESP_ERROR_CHECK(mock_flash_init(MOCK_FLASH_SIZE));
                 break;
             case OFFLINE_MONITOR:
@@ -203,13 +214,30 @@ void fsm_control( void * pvParameters ){
                 }
                 break;
             case CONSOLE:
-                ESP_LOGI(TAG, "TODO CONSOLE");
+                ESP_LOGI("CONSOLE", "Console Mode (To do)...");
+                // Console timer start
+                const esp_timer_create_args_t console_mode_timer_args = {
+                    .callback = &console_timer_callback,
+                    .arg = NULL,
+                    .name = "console_mode_timer"
+                };
+                ESP_ERROR_CHECK(esp_timer_create(&console_mode_timer_args, &console_mode_timer));
+                ESP_ERROR_CHECK(esp_timer_start_once(console_mode_timer, CONSOLE_MODE_MAX_TIME * 1000));
                 break;
             default:
                 break;
             }
             
         }
+    }
+}
+
+// -------------- Timer Callback -------------- //
+void console_timer_callback(void *arg) {
+    // Enqueue event
+    fsm_events fsm_event = FSM_MONITOR_COMMAND;
+    if (xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY ) != pdPASS ){
+        ESP_LOGE(TAG, "Can't write in queue");
     }
 }
 
@@ -249,6 +277,15 @@ void app_main(void)
                                                             &sampler_event_handler,
                                                             NULL,
                                                             &instance_muestreador));
+    
+    //- Button event handler
+    esp_event_handler_instance_t instance_button;
+    ESP_ERROR_CHECK(esp_event_handler_instance_register_with(loop_event_handle,
+                                                            BUTTON_BASE_EVENT,
+                                                            ESP_EVENT_ANY_ID,
+                                                            &button_event_handler,
+                                                            NULL,
+                                                            &instance_button));  
 
     //-- Start FSM Tasks
     TaskHandle_t fsmTaskHandle = NULL;

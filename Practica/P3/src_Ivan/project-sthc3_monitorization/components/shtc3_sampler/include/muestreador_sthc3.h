@@ -1,3 +1,5 @@
+#include "shtc3.h"
+
 #define STACK_SIZE 3072
 #define STEP_MUESTREO 1000
 

@@ -1,7 +1,6 @@
 #include "button.h"
-#include "esp_event.h"
 #include "esp_log.h"
-#include "esp_timer.h"
+#include "driver/gpio.h"
 
 static const char *TAG = "BUTTON";
 

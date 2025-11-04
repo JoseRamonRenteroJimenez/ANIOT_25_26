@@ -4,7 +4,7 @@
 #include "esp_event.h"
 #include "esp_timer.h"
 
-#define BUTTON_GPIO       0        // GPIO 0 es el botón de Boot       
+#define BUTTON_GPIO       9        // GPIO 0 es el botón de Boot       
 #define BUTTON_ACTIVE_LOW 1       
 
 typedef enum {
