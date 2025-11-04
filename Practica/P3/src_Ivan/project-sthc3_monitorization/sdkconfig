@@ -1366,10 +1366,6 @@ CONFIG_SPI_FLASH_SUPPORT_TH_CHIP=y
 
 CONFIG_SPI_FLASH_ENABLE_ENCRYPTED_READ_WRITE=y
 # end of SPI Flash driver
-
-#
-# SHTC3 Configuration
-#
 # end of Component config
 
 # CONFIG_IDF_EXPERIMENTAL_FEATURES is not set

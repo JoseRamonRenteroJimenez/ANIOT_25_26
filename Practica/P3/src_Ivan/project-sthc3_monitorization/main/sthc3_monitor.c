@@ -12,6 +12,7 @@
 #include "muestreador_sthc3.h"
 #include "sthc3_monitor.h"
 #include "esp_timer.h"
+#include "button.h"
 
 static const char *TAG = "STHC3_Monitor";
 
@@ -96,6 +97,22 @@ void wifi_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id
         break;
     }
 }
+
+void button_event_handler(void* arg, esp_event_base_t base, int32_t id, void* data)
+{
+    fsm_events fsm_event;
+    switch (id) {
+        case BUTTON_EVENT_PRESSED:
+            ESP_LOGI(TAG, "Botón PRESIONADO");
+            fsm_event = FSM_BUTTON_PRESS;
+            xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY);
+            break;
+        case BUTTON_EVENT_RELEASED:
+            ESP_LOGI(TAG, "Botón LIBERADO");
+            break;
+    }
+}
+
 
 // -------------- Tasks -------------- //
 void fsm_control( void * pvParameters ){
