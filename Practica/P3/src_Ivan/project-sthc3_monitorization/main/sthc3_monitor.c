@@ -11,6 +11,7 @@
 #include "mock_wifi.h"
 #include "muestreador_sthc3.h"
 #include "sthc3_monitor.h"
+#include "esp_timer.h"
 
 static const char *TAG = "STHC3_Monitor";
 
@@ -30,19 +31,27 @@ int init_sampler(uint64_t sample_time){
     return ret;
 }
 
-
+int init_wifi(){
+    wifi_mock_init(loop_event_handle);
+    int ret = wifi_connect();
+    return ret;
+}
 // -------------- Events -------------- //
-void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data){
+void sampler_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data){
 
     fsm_events fsm_event;
 
     switch (event_id)
     {
     case NEW_DATA:
+        // Sensor data queue
         sthc3_data recived_data = *((sthc3_data *)event_data);
-        ESP_LOGI(TAG, "New Sampler Data Event -- Sensor Values -- Temp: %f  HUM: %f", 
-                recived_data.temp_value, recived_data.hum_value);
         if (xQueueSendToBack(sensorDataQueue, &recived_data, portMAX_DELAY ) != pdPASS ){
+            ESP_LOGE(TAG, "Can't write in queue");
+        }
+        // Fsm event queue
+        fsm_event = FSM_DATA_IN_SENSOR_QUEUE;
+        if (xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY ) != pdPASS ){
             ESP_LOGE(TAG, "Can't write in queue");
         }
         break;
@@ -93,25 +102,23 @@ void fsm_control( void * pvParameters ){
 
     ESP_LOGI(TAG, "FSM Control Started...");
     fsm_status = INIT;
-    int sampler_init = 0;
     fsm_events event;
-    sthc3_data sensor_data:
+    sthc3_data sensor_data;
+    char sensor_data_str[STHC3_STR_BUFFER_LEN];
 
     while (1){
         //-- Check for fsm events
-        if( xQueueReceive( fsmEventsQueue, &( event ), pdMS_TO_TICKS(100) )){
+        if( xQueueReceive( fsmEventsQueue, &( event ), portMAX_DELAY )){
+            //-- Transition Table
             ESP_LOGI(TAG, "FSM Status: %s", fsm_status2str[fsm_status]);
-            ESP_LOGI(TAG, "FSM Event recived: %d", event);
-            //-- Status transition
+            ESP_LOGI(TAG, "FSM Event recived: %s", fsm_events2str[event]);
+            //- Status transition
             switch (fsm_status)
             {
             case INIT:
-                // Status change
                 if (event == FSM_SAMPLER_INIT){
                     fsm_status = OFFLINE_MONITOR;
-                    // Change to OFFLINE_MONITOR inits
-                    wifi_mock_init(loop_event_handle);
-                    ESP_ERROR_CHECK(wifi_connect());
+                    init_wifi();
                 }
                 break;
             case OFFLINE_MONITOR:
@@ -122,42 +129,70 @@ void fsm_control( void * pvParameters ){
             case WIFI_MONITOR:
                 if (event == FSM_WIFI_DISCONNECTED){
                     fsm_status = OFFLINE_MONITOR;
+                    init_wifi();
                 }
                 else if (event == FSM_BUTTON_PRESS){
                     fsm_status = CONSOLE;
                     ESP_ERROR_CHECK(wifi_disconnect());
                 }
                 break;
+            case CONSOLE:
+                if (event == FSM_MONITOR_COMMAND){
+                    fsm_status = OFFLINE_MONITOR;
+                    init_wifi();
+                }
             default:
                 break;
             }
-        }
-
-        //-- Actions in each status
-        switch (fsm_status)
-        {
-        case INIT:
-            // TODO: Add timer
-            if (!sampler_init){
-                init_sampler(STEP_MUESTREO);
-                sampler_init = 1;
+        
+            //-- Actions in each status
+            switch (fsm_status)
+            {
+            case INIT:
+                init_sampler(SAMPLER_PERIOD_MS);
+                ESP_ERROR_CHECK(mock_flash_init(MOCK_FLASH_SIZE));
+                break;
+            case OFFLINE_MONITOR:
+                if( event == FSM_DATA_IN_SENSOR_QUEUE && 
+                    xQueueReceive( sensorDataQueue, &( sensor_data ), portMAX_DELAY )){
+                    if(writeToFlash((void *) &sensor_data, sizeof(sthc3_data)) != ESP_OK){
+                        ESP_LOGW(TAG, "Error saving data in Flash Memory, discarding value");
+                    }
+                }
+                break;
+            case WIFI_MONITOR:
+                //-- Check flash data and send it
+                while(getDataLeft() != 0){
+                    sensor_data = *(sthc3_data *) readFromFlash(sizeof(sthc3_data));
+                    sthc3_to_string(&sensor_data, sensor_data_str, STHC3_STR_BUFFER_LEN);
+                    if(send_data_wifi((void *) &sensor_data_str, STHC3_STR_BUFFER_LEN) != ESP_OK){
+                        ESP_LOGW(TAG, "Error sending wifi data, data writen to Flash Memory");
+                        if(writeToFlash((void *) &sensor_data, sizeof(sthc3_data)) != ESP_OK){
+                            ESP_LOGW(TAG, "Error saving data in Flash Memory, discarding value");
+                        }
+                        
+                    }
+                }
+                //-- Send queue data
+                if( event == FSM_DATA_IN_SENSOR_QUEUE && 
+                    xQueueReceive( sensorDataQueue, &( sensor_data ), portMAX_DELAY )){
+                    sthc3_to_string(&sensor_data, sensor_data_str, STHC3_STR_BUFFER_LEN);
+                    if(send_data_wifi((void *) &sensor_data_str, STHC3_STR_BUFFER_LEN) != ESP_OK){
+                        ESP_LOGW(TAG, "Error sending wifi data, data writen to Flash Memory");
+                        if(writeToFlash((void *) &sensor_data, sizeof(sthc3_data)) != ESP_OK){
+                            ESP_LOGW(TAG, "Error saving data in Flash Memory, discarding value");
+                        }
+                    }
+                }
+                break;
+            case CONSOLE:
+                ESP_LOGI(TAG, "TODO CONSOLE");
+                break;
+            default:
+                break;
             }
-            break;
-        case OFFLINE_MONITOR:
-            if( xQueueReceive( sensorDataQueue, &( sensor_data ), pdMS_TO_TICKS(1000) )){
-                ESP_LOGI(TAG, "Save Data in flash memory");
-            }
-            break;
-        case WIFI_MONITOR:
-            ESP_LOGI(TAG, "Sending flash data or queue data using wifi");
-            break;
-        case CONSOLE:
-            ESP_LOGI(TAG, "TODO CONSOLE");
-            break;
-        default:
-            break;
+            
         }
-
     }
 }
 
@@ -166,8 +201,8 @@ void app_main(void)
 {   
 
     //-- Queues init
-    fsmEventsQueue = xQueueCreate( 10, sizeof( fsm_events ) );
-    sensorDataQueue = xQueueCreate( 10, sizeof( sthc3_data ) );
+    fsmEventsQueue = xQueueCreate( QUEUE_DEF_SIZE, sizeof( fsm_events ) );
+    sensorDataQueue = xQueueCreate( QUEUE_DEF_SIZE, sizeof( sthc3_data ) );
 
     //-- Events Definition
     //- Event loop init
@@ -194,19 +229,18 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_handler_instance_register_with(loop_event_handle,
                                                             SAMPLER_EVENT,
                                                             ESP_EVENT_ANY_ID,
-                                                            &event_handler,
+                                                            &sampler_event_handler,
                                                             NULL,
                                                             &instance_muestreador));
 
-    // -- Start FSM Tasks
+    //-- Start FSM Tasks
     TaskHandle_t fsmTaskHandle = NULL;
     xTaskCreate(fsm_control, "FSM", STACK_SIZE, (void *)&fsm_control, 5, &fsmTaskHandle);
 
-
-    // Wifi init and connection
-    //wifi_mock_init(loop_event_handle);
-    //ESP_ERROR_CHECK(wifi_connect());
-
-
+    //-- Send FSM start event to queue
+    fsm_events fsm_event = FSM_START;
+    if (xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY ) != pdPASS ){
+        ESP_LOGE(TAG, "Can't write in queue");
+    }
     
 }

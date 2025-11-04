@@ -20,7 +20,8 @@
     "esp_log.h": "c",
     "sdkconfig.h": "c",
     "esp_event.h": "c",
-    "muestreador_sthc3.h": "c"
+    "muestreador_sthc3.h": "c",
+    "queue.h": "c"
   },
   "idf.flashType": "UART",
   "C_Cpp.errorSquiggles": "disabled"

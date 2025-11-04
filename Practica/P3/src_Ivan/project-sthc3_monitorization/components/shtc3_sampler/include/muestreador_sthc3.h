@@ -17,6 +17,5 @@ typedef enum {
 
 // Functions
 int init_i2c(i2c_master_bus_config_t conf);
+void sthc3_to_string(const sthc3_data *data, char *out_str, size_t max_len);
 void sampler_run(esp_event_loop_handle_t event_loop, uint64_t sample_time);
-
-

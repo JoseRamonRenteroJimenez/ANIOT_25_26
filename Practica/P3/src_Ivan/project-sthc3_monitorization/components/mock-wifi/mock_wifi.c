@@ -85,7 +85,7 @@ esp_err_t send_data_wifi(void *data, size_t size)
     }
     else
     {
-        ESP_LOGI(TAG, "Data '%.6f' sent successfully", *((float *)data));
+        ESP_LOGI(TAG, "Data '%s' sent successfully", (char *)data);
         return ESP_OK;
     }
 }

@@ -26,6 +26,16 @@ int init_i2c(i2c_master_bus_config_t conf) {
     return ret;
 }
 
+void sthc3_to_string(const sthc3_data *data, char *out_str, size_t max_len)
+{
+    if (data == NULL || out_str == NULL || max_len == 0)
+        return;
+
+    snprintf(out_str, max_len,
+             "{ \"temp\": %.2f, \"hum\": %.2f }",
+             data->temp_value, data->hum_value);
+}
+
 void sampler_run(esp_event_loop_handle_t event_loop, uint64_t sample_time_ms){
     // Init event post
     loop = event_loop;
