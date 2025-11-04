@@ -1,7 +1,7 @@
 {
   "C_Cpp.intelliSenseEngine": "default",
   "idf.espIdfPath": "/home/pocho/esp/v5.5.1/esp-idf",
-  "idf.pythonInstallPath": "/usr/bin/python",
+  "idf.pythonInstallPath": "/usr/bin/python3",
   "idf.openOcdConfigs": [
     "board/esp32c3-builtin.cfg"
   ],
@@ -20,7 +20,8 @@
     "esp_log.h": "c",
     "sdkconfig.h": "c",
     "esp_event.h": "c",
-    "muestreador_sthc3.h": "c"
+    "muestreador_sthc3.h": "c",
+    "button.h": "c"
   },
   "idf.flashType": "UART",
   "C_Cpp.errorSquiggles": "disabled"
