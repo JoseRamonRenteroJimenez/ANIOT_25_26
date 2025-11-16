@@ -1,0 +1,27 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.espIdfPath": "/home/pocho/esp/v5.5.1/esp-idf",
+  "idf.pythonInstallPath": "/usr/bin/python",
+  "idf.openOcdConfigs": [
+    "board/esp32c3-builtin.cfg"
+  ],
+  "idf.port": "/dev/ttyACM0",
+  "idf.toolsPath": "/home/pocho/.espressif",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32c3"
+  },
+  "clangd.path": "/home/pocho/.espressif/tools/esp-clang/esp-19.1.2_20250312/esp-clang/bin/clangd",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=/home/pocho/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20241119/riscv32-esp-elf/bin/riscv32-esp-elf-gcc",
+    "--compile-commands-dir=/home/pocho/Documents/MIOT/ANIOT/Practicas/RepoANIOT/Practica/P4/src_Ivan/project-ICM42670_led/build"
+  ],
+  "idf.flashType": "UART",
+  "files.associations": {
+    "icm42670.h": "c",
+    "time.h": "c",
+    "random": "c",
+    "i2c_master.h": "c",
+    "math.h": "c"
+  }
+}
