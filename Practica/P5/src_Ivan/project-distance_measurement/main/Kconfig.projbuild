@@ -1,0 +1,45 @@
+menu "Distance Measurenment Configuration"
+
+    config SAMPLER_PERIOD_MS
+        int "Sampler period in ms"
+        range 400 3600000
+        default 1000
+        help
+            Define the period in milliseconds between each sample.
+
+    config N
+        int "Number of samples to average"
+        range 1 100
+        default 10
+        help
+            Define the number of samples to average for each measurement.
+
+    config ADC_UNIT
+        int "ADC Unit"
+        range 0 1
+        default 0
+        help
+            Define the ADC unit to be used (1 or 2).
+    
+    config ADC_CHANNEL
+        int "ADC Channel"
+        range 0 7
+        default 6
+        help
+            Define the ADC channel to be used (0-7).
+
+    config ADC_ATTENUATION
+        int "ADC Attenuation"
+        range 0 3
+        default 3
+        help
+            Define the ADC attenuation (0-3).
+    
+    config ADC_BITHWIDTH
+        int "ADC Bit Width"
+        range 0 12
+        default 0
+        help
+            Define the ADC bit width (0-12).
+
+endmenu
