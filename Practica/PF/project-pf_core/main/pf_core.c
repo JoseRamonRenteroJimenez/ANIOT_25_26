@@ -16,11 +16,12 @@
 #include "button.h"
 #include "https_ota.h"
 #include "pf_core.h"
+#include "accelerometer.h"
 
 #define WIFI_SSID CONFIG_EXAMPLE_WIFI_SSID
 #define WIFI_PSW CONFIG_EXAMPLE_WIFI_PASSWORD
 #define SAMPLER_PERIOD_MS CONFIG_SAMPLER_PERIOD_MS
-#define DEEP_SLEE_TIMER_MS CONFIG_DEPP_SLEEP_TIME_MS
+#define DEEP_SLEEP_TIMER_MS CONFIG_DEEP_SLEEP_TIME_MS
 #define DIAGNOSTIC_WIFI_MAX_GET_IP_TIME 100000
 #define DIAGNOSTIC_WIFI_DELAY_STEP_TIME 1000
 #define COMPONENTS_START_TIMEOUT_ATTEMPS 60
@@ -120,8 +121,7 @@ esp_err_t init_button(esp_event_loop_handle_t loop_handle){
 }
 
 esp_err_t init_accelerometer(esp_event_loop_handle_t loop_handle){
-    // TODO
-    return ESP_OK;
+    return accelerometer_init(loop_handle);
 }
 
 esp_err_t init_components(uint64_t sample_time, esp_event_loop_handle_t loop_handle){
@@ -170,7 +170,6 @@ bool wifi_has_ip(){
     return ip_info.ip.addr != 0;
 }
 
-
 bool diagnostic(){
 
     // Check image validity
@@ -197,26 +196,19 @@ bool diagnostic(){
     return true;
 }
 
+void reset_timer_deep_sleep(){
+    if (esp_timer_stop(deep_sleep_timer) == ESP_OK){
+        esp_timer_start_once(deep_sleep_timer, DEEP_SLEEP_TIMER_MS * 1000);
+        #ifdef CONFIG_DEBUG_LOG
+        ESP_LOGI(TAG, "Deep sleep timer reseted");
+        #endif
+    }
+}
+
 // -------------- Callbacks -------------- //
 static void deep_sleep_timer_callback(void *arg){
-
-    // Invert mode
-    sleep_mode = !sleep_mode;
-
-    // Post change event
-    fsm_events fsm_event;
-    if (sleep_mode){
-        fsm_event = FSM_DEEP_SLEEP_START;
-    }
-    else{
-        fsm_event = FSM_DEEP_SLEEP_STOP;
-    }
-    if (xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY ) != pdPASS ){
-        ESP_LOGE(TAG, "Can't write in queue");
-    }
-
-    // TODO -> Change to deep sleep
-
+    fsm_events fsm_event = FSM_DEEP_SLEEP_START;
+    xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY);
 }
 
 
@@ -293,6 +285,15 @@ void button_event_handler(void* arg, esp_event_base_t base, int32_t id, void* da
     }
 }
 
+void accelerometer_event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data){
+    if (event_id == ACCEL_EVENT_PERTURBATION) {
+        fsm_events fsm_event = FSM_ACCEL_DATA_IN_SENSOR_QUEUE;
+        if (xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY) != pdPASS) {
+            ESP_LOGE(TAG, "Can't write accel event to FSM queue");
+        }
+    }
+}
+
 // -------------- Tasks -------------- //
 void fsm_control( void * pvParameters ){
 
@@ -310,74 +311,16 @@ void fsm_control( void * pvParameters ){
             ESP_LOGI(TAG, "FSM Status: %s", fsm_status2str[fsm_status]);
             ESP_LOGI(TAG, "FSM Event recived: %s", fsm_events2str[event]);
             #endif
-            //- Status transition
+            
+
             switch (fsm_status)
             {
             case INIT: {
                 if (event == FSM_COMPONENTS_INIT){
                     fsm_status = OTA_VALIDATION;
                 }
-                break;
-            }
 
-            case OTA_VALIDATION: {
-                if (event == FSM_VALID_OTA_IMG){
-                    ESP_LOGI(TAG, "Diagnostic succesful. Markin image as valid");
-                    https_ota_mark_valid();
-                    fsm_status = ACTIVE;
-                    esp_timer_stop(deep_sleep_timer);
-                    esp_timer_start_once(deep_sleep_timer, DEEP_SLEE_TIMER_MS * 1000);
-                }
-                else if (event == FSM_INVALID_OTA_IMG){
-                    ESP_LOGI(TAG, "Diagnostic failed. Marking image as invalid and rebooting...");
-                    https_ota_mark_invalid_and_reboot();
-                }
-                break;
-            }
-
-            case ACTIVE: {
-                if (event == FSM_BUTTON_PRESS){
-                    esp_timer_stop(deep_sleep_timer);
-                    fsm_status = OTA_UPDATE;
-                }
-                else if (event == FSM_DEEP_SLEEP_START){
-                    fsm_status = DEEP_SLEEP;
-                    esp_timer_stop(deep_sleep_timer);
-                    esp_timer_start_once(deep_sleep_timer, DEEP_SLEE_TIMER_MS * 1000);
-                }
-                break;
-            }
-
-            case OTA_UPDATE: {
-                if (event == FSM_OTA_FAILURE){
-                    ESP_LOGW(TAG, "OTA Failed -> Can't get image from HTTP server, returning to Active mode...");
-                    fsm_status = ACTIVE;
-                }
-                else if (event == FSM_OTA_SUCCES){
-                    esp_restart();
-                }
-                break; 
-            }
-
-            case DEEP_SLEEP: {
-                if (event == FSM_DEEP_SLEEP_STOP){
-                    fsm_status = ACTIVE;
-                    esp_timer_stop(deep_sleep_timer);
-                    esp_timer_start_once(deep_sleep_timer, DEEP_SLEE_TIMER_MS * 1000);
-                }
-                break;
-            }
-
-            default: {
-                break;
-            }
-            }
-
-            //-- Actions in each status
-            switch (fsm_status)
-            {
-            case INIT: {
-                if (event == FSM_START){
+                else if (event == FSM_START){
                     init_components(SAMPLER_PERIOD_MS, loop_event_handle);
                     bool components_init = check_components();
                     if(components_init){
@@ -395,7 +338,17 @@ void fsm_control( void * pvParameters ){
             }
 
             case OTA_VALIDATION: {
-                if (event == FSM_COMPONENTS_INIT){
+                if (event == FSM_VALID_OTA_IMG){
+                    ESP_LOGI(TAG, "Diagnostic succesful. Markin image as valid");
+                    https_ota_mark_valid();
+                    fsm_status = ACTIVE;
+                    reset_timer_deep_sleep();
+                }
+                else if (event == FSM_INVALID_OTA_IMG){
+                    ESP_LOGI(TAG, "Diagnostic failed. Marking image as invalid and rebooting...");
+                    https_ota_mark_invalid_and_reboot();
+                }
+                else if (event == FSM_COMPONENTS_INIT){
                     bool img_is_ok = diagnostic();
                     fsm_event = img_is_ok ? FSM_VALID_OTA_IMG : FSM_INVALID_OTA_IMG;
                     if (xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY) != pdPASS){
@@ -406,22 +359,43 @@ void fsm_control( void * pvParameters ){
             }
 
             case ACTIVE: {
-                if (event == FSM_SHTC3_DATA_IN_SENSOR_QUEUE &&
+                if (event == FSM_BUTTON_PRESS){
+                    esp_timer_stop(deep_sleep_timer);
+                    fsm_status = OTA_UPDATE;
+                }
+                else if (event == FSM_DEEP_SLEEP_START){
+                    fsm_status = DEEP_SLEEP;
+                }
+                else if (event == FSM_SHTC3_DATA_IN_SENSOR_QUEUE &&
                     xQueueReceive(sensorDataQueue, &sensor_data, 0)){
                     sthc3_data sthc3_sensor_data = sensor_data.sthc3;
                     sthc3_to_string(&sthc3_sensor_data, sensor_data_str, STHC3_STR_BUFFER_LEN);
                     ESP_LOGI(TAG, "Sensor Data: %s", sensor_data_str);
+                    #ifdef CONFIG_RESET_TIMER_ON_UPDATE
+                    reset_timer_deep_sleep();
+                    #endif
                 }
                 else if (event == FSM_ACCEL_DATA_IN_SENSOR_QUEUE &&
                     xQueueReceive(sensorDataQueue, &sensor_data, 0)){
                     float accel_sensor_data = sensor_data.accel;
                     ESP_LOGI(TAG, "Accelerometer Sensor Data: %.6f", accel_sensor_data);
+                    #ifdef CONFIG_RESET_TIMER_ON_UPDATE
+                    reset_timer_deep_sleep();
+                    #endif
                 }
                 break;
             }
 
             case OTA_UPDATE: {
-                if(event == FSM_BUTTON_PRESS){
+                if (event == FSM_OTA_FAILURE){
+                    ESP_LOGW(TAG, "OTA Failed -> Can't get image from HTTP server, returning to Active mode...");
+                    fsm_status = ACTIVE;
+                    reset_timer_deep_sleep();
+                }
+                else if (event == FSM_OTA_SUCCES){
+                    esp_restart();
+                }
+                else if(event == FSM_BUTTON_PRESS){
                     ESP_LOGI(TAG, "OTA Download");
                     esp_err_t err = https_ota_download(NULL);
                     ESP_LOGI(TAG, "OTA Result: %d",  err);
@@ -430,12 +404,26 @@ void fsm_control( void * pvParameters ){
                         ESP_LOGE(TAG, "Can't write in queue");
                     }
                 }
-                break;
+                break; 
             }
 
             case DEEP_SLEEP: {
-                if (event == FSM_DEEP_SLEEP_START){
-                    ESP_LOGI(TAG, "DEEP SLEEP: TODO");
+                ESP_LOGI(TAG, "Entering deep sleep for 10 minutes");
+
+                // Prepare for deep sleep
+                esp_wifi_stop();
+                esp_wifi_deinit();
+
+                // Enter deep sleep
+                if(esp_sleep_enable_timer_wakeup(DEEP_SLEEP_TIME_US) == ESP_OK){
+                    if(CONFIG_DEBUG_LOG){
+                    ESP_LOGI(TAG, "Going to sleep now");    
+                    }
+                    esp_deep_sleep_start();
+                    // The program will restart from app_main after waking up
+                }
+                else{
+                    ESP_LOGE(TAG, "Deep sleep timer configuration failed");
                 }
                 break;
             }
@@ -443,22 +431,21 @@ void fsm_control( void * pvParameters ){
             default: {
                 break;
             }
-        }
-
-        // If FSM_SHTC3_DATA_IN_SENSOR_QUEUE activate FSM but status it's not ACTIVE
-        // clean sensorDataQueue associate with the activation
-        if (fsm_status != ACTIVE &&
-            event == FSM_SHTC3_DATA_IN_SENSOR_QUEUE &&
-            xQueueReceive(sensorDataQueue, &sensor_data, 0)){
-                #ifdef CONFIG_DEBUG_LOG
-                ESP_LOGW(TAG, "sensorDataQueue value discarded");
-                #endif
-                (void)0;
             }
         }
-    }
-}
 
+    // If FSM_SHTC3_DATA_IN_SENSOR_QUEUE activate FSM but status it's not ACTIVE
+    // clean sensorDataQueue associate with the activation
+    if (fsm_status != ACTIVE &&
+        event == FSM_SHTC3_DATA_IN_SENSOR_QUEUE &&
+        xQueueReceive(sensorDataQueue, &sensor_data, 0)){
+            #ifdef CONFIG_DEBUG_LOG
+            ESP_LOGW(TAG, "sensorDataQueue value discarded");
+            #endif
+            (void)0;
+        }
+    }   
+}
 
 void app_main(void)
 {
@@ -479,7 +466,7 @@ void app_main(void)
     };
     ESP_ERROR_CHECK(esp_event_loop_create(&loop_args, &loop_event_handle));
 
-    
+
     //- Wifi event handler
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_event_handler_instance_t instance_wifi;
@@ -512,7 +499,17 @@ void app_main(void)
                                                             ESP_EVENT_ANY_ID,
                                                             &button_event_handler,
                                                             NULL,
-                                                            &instance_button)); 
+                                                            &instance_button));
+                                                            
+    //- Accelerometer event handler
+    esp_event_handler_instance_t instance_accel;
+    ESP_ERROR_CHECK(
+    esp_event_handler_instance_register_with(loop_event_handle,
+                                            ACCEL_EVENT_BASE,
+                                            ESP_EVENT_ANY_ID,
+                                            &accelerometer_event_handler,
+                                            NULL,
+                                            &instance_accel));
 
     //-- Start FSM Tasks
     TaskHandle_t fsmTaskHandle = NULL;
