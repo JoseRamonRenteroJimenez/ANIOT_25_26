@@ -39,7 +39,6 @@ bool wifi_init = false;
 
 static esp_timer_handle_t deep_sleep_timer;
 static void deep_sleep_timer_callback(void *arg);
-int sleep_mode = 0; // active = 0, deep_sleep = 1
 
 // -------------- Utils -------------- //
 esp_err_t init_shtc3_sampler(uint64_t sample_time, esp_event_loop_handle_t loop_handle){
@@ -192,7 +191,6 @@ bool diagnostic(){
     if (!shtc3_sampler_init) return false;
     ESP_LOGI(TAG, "Diagnostic: Sampler module working");
 
-
     return true;
 }
 
@@ -202,6 +200,28 @@ void reset_timer_deep_sleep(){
         #ifdef CONFIG_DEBUG_LOG
         ESP_LOGI(TAG, "Deep sleep timer reseted");
         #endif
+    }
+}
+
+void enter_light_sleep_mode(){
+    esp_sleep_enable_timer_wakeup(WAKEUP_TIME_US);
+    #ifdef CONFIG_DEBUG_LOG
+    ESP_LOGI(TAG, "Light sleep mode started");
+    #endif
+
+    #if BUTTON_ACTIVE_LOW
+    esp_sleep_enable_ext0_wakeup(BUTTON_GPIO, 0);
+    #else
+    esp_sleep_enable_ext0_wakeup(BUTTON_GPIO, 1);
+    #endif
+
+    if (esp_light_sleep_start() == ESP_OK){
+        #ifdef CONFIG_DEBUG_LOG
+        ESP_LOGI(TAG, "Light sleep ended");
+        #endif
+    }
+    else{
+        ESP_LOGE(TAG, "Error starting light sleep mode");
     }
 }
 
@@ -254,6 +274,7 @@ static void wifi_event_handler(void *arg,esp_event_base_t event_base, int32_t ev
         case WIFI_EVENT_STA_DISCONNECTED:
             ESP_LOGW(TAG, "WiFi disconnected, retrying....");
             init_wifi(loop_event_handle);
+            //esp_wifi_connect();
             break;
 
         default:
@@ -306,13 +327,12 @@ void fsm_control( void * pvParameters ){
 
     while (1){
         //-- Check for fsm events
-        if( xQueueReceive( fsmEventsQueue, &( event ), portMAX_DELAY )){
+        if( xQueueReceive( fsmEventsQueue, &( event ), 0 )){
             #ifdef CONFIG_DEBUG_LOG
             ESP_LOGI(TAG, "FSM Status: %s", fsm_status2str[fsm_status]);
             ESP_LOGI(TAG, "FSM Event recived: %s", fsm_events2str[event]);
             #endif
             
-
             switch (fsm_status)
             {
             case INIT: {
@@ -321,7 +341,7 @@ void fsm_control( void * pvParameters ){
                 }
 
                 else if (event == FSM_START){
-                    init_components(SAMPLER_PERIOD_MS, loop_event_handle);
+                    init_components(SAMPLER_PERIOD_MS, loop_event_handle); 
                     bool components_init = check_components();
                     if(components_init){
                         fsm_event = FSM_COMPONENTS_INIT;
@@ -432,6 +452,13 @@ void fsm_control( void * pvParameters ){
                 break;
             }
             }
+        } else {
+            if (fsm_status == ACTIVE)
+            {
+                // Start light sleep timer
+                ESP_LOGI(TAG, "Entering Light Sleep mode...");
+                enter_light_sleep_mode();
+            }
         }
 
     // If FSM_SHTC3_DATA_IN_SENSOR_QUEUE activate FSM but status it's not ACTIVE
@@ -452,8 +479,17 @@ void app_main(void)
     ESP_LOGI(TAG, "PF_CORE Start");
 
     //-- Queues init
+
     fsmEventsQueue = xQueueCreate( QUEUE_DEF_SIZE, sizeof( fsm_events ) );
+    if( fsmEventsQueue == NULL || fsmEventsQueue == 0 ) {
+        ESP_LOGE(TAG, "Error creating FSM event queue");
+        abort();
+    }
     sensorDataQueue = xQueueCreate( QUEUE_DEF_SIZE, sizeof( sensors_data ) );
+    if( sensorDataQueue == NULL || sensorDataQueue == 0 ) {
+        ESP_LOGE(TAG, "Error creating sensor data queue");
+        abort();
+    }
 
     //-- Events Definition
     //- Event loop init

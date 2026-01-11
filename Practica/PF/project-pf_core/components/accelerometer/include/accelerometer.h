@@ -4,6 +4,9 @@
 #include "esp_event.h"
 #include "esp_err.h"
 
+#define ACCEL_GPIO       10        // GPIO 0 es el botón de Boot       
+
+
 // Event base
 ESP_EVENT_DECLARE_BASE(ACCEL_EVENT_BASE);
 
