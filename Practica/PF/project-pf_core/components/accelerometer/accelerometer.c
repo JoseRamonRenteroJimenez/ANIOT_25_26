@@ -1,46 +1,34 @@
 #include "accelerometer.h"
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include "esp_timer.h"
+#include "math.h"
+#include "driver/i2c_master.h"
+#include "i2c_bus.h"  // Incluir el componente i2c_bus
+
+//https://deepwiki.com/jamessizeland/esp32c3-devkit-demo/5.1-imu-sensor-(icm42670)
 
 static const char *TAG = "ACCEL";
 
-ESP_EVENT_DEFINE_BASE(ACCEL_EVENT_BASE);
+#define ICM_42670_P_ADDR 0x68
 
-static esp_event_loop_handle_t accel_loop;
+static esp_event_loop_handle_t event_loop;
+static esp_timer_handle_t accel_timer;
+static i2c_master_dev_handle_t accel_dev;
 
-// Task simulando detección
-static void accel_task(void *arg)
+static void accel_timer_callback(void *arg);
+
+static esp_err_t IMU_write(uint8_t reg, uint8_t value)
 {
-    while (1) {
-        vTaskDelay(pdMS_TO_TICKS(15000)); // cada 15 s
-
-        ESP_LOGW(TAG, "Perturbation detected!");
-
-        esp_event_post_to(
-            accel_loop,
-            ACCEL_EVENT_BASE,
-            ACCEL_EVENT_PERTURBATION,
-            NULL,
-            0,
-            portMAX_DELAY
-        );
-    }
+    uint8_t data[2] = { reg, value };
+    return i2c_master_transmit(accel_dev, data, sizeof(data), -1);
 }
 
-esp_err_t accelerometer_init(esp_event_loop_handle_t loop_handle)
+static esp_err_t IMU_read(uint8_t reg, uint8_t *data, size_t len)
 {
-    accel_loop = loop_handle;
+    return i2c_master_transmit_receive(accel_dev, &reg, 1, data, len, -1);
+}
 
-    xTaskCreate(
-        accel_task,
-        "accel_task",
-        2048,
-        NULL,
-        5,
-        NULL
-    );
-
-    ESP_LOGI(TAG, "Accelerometer initialized");
-    return ESP_OK;
+static void accel_callback(void *arg)
+{
+    //TODO
 }
