@@ -20,7 +20,6 @@
 #include "i2c_bus.h"
 #include "esp_sleep.h"
 
-
 #define WIFI_SSID CONFIG_EXAMPLE_WIFI_SSID
 #define WIFI_PSW CONFIG_EXAMPLE_WIFI_PASSWORD
 #define SAMPLER_PERIOD_MS CONFIG_SAMPLER_PERIOD_MS
@@ -46,10 +45,11 @@ static void deep_sleep_timer_callback(void *arg);
 esp_err_t init_shtc3_sampler(uint64_t sample_time, esp_event_loop_handle_t loop_handle)
 {
     i2c_master_bus_handle_t bus = i2c_bus_get();
-    if (bus == NULL) {
+    if (bus == NULL)
+    {
         return ESP_FAIL;
     }
-    
+
     sampler_run(bus, loop_handle, sample_time);
     return ESP_OK;
 }
@@ -57,7 +57,7 @@ esp_err_t init_shtc3_sampler(uint64_t sample_time, esp_event_loop_handle_t loop_
 esp_err_t init_pm()
 {
     // Configuración global de PM
-    esp_pm_config_esp32_t pm_config = {
+    esp_pm_config_t pm_config = {
         .max_freq_mhz = 240,
         .min_freq_mhz = 10, // Frecuencia de bajo consumo
         .light_sleep_enable = true};
@@ -144,10 +144,10 @@ esp_err_t init_button(esp_event_loop_handle_t loop_handle)
     return err;
 }
 
-//esp_err_t init_accelerometer(esp_event_loop_handle_t loop_handle)
+// esp_err_t init_accelerometer(esp_event_loop_handle_t loop_handle)
 //{
-//    return accelerometer_init(loop_handle);
-//}
+//     return accelerometer_init(loop_handle);
+// }
 
 esp_err_t init_components(uint64_t sample_time, esp_event_loop_handle_t loop_handle)
 {
@@ -332,15 +332,22 @@ void button_event_handler(void *arg, esp_event_base_t base, int32_t id, void *da
     }
 }
 
-void accelerometer_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+void accelerometer_event_handler(void *arg,
+                                 esp_event_base_t base,
+                                 int32_t id,
+                                 void *event_data)
 {
-    if (event_id == ACCEL_EVENT_PERTURBATION)
-    {
-        fsm_events fsm_event = FSM_ACCEL_DATA_IN_SENSOR_QUEUE;
-        if (xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY) != pdPASS)
-        {
-            ESP_LOGE(TAG, "Can't write accel event to FSM queue");
-        }
+    if (id == ACCEL_EVENT_PERTURBATION && event_data != NULL) {
+
+        imu_data_t imu = *(imu_data_t *)event_data;
+
+        sensors_data data2send = {0};
+        data2send.accel_magnitude = imu.accel_magnitude;
+
+        xQueueSendToBack(sensorDataQueue, &data2send, portMAX_DELAY);
+
+        fsm_events ev = FSM_ACCEL_DATA_IN_SENSOR_QUEUE;
+        xQueueSendToBack(fsmEventsQueue, &ev, portMAX_DELAY);
     }
 }
 
@@ -494,8 +501,11 @@ void fsm_control(void *pvParameters)
                 else if (event == FSM_ACCEL_DATA_IN_SENSOR_QUEUE &&
                          xQueueReceive(sensorDataQueue, &sensor_data, 0))
                 {
-                    float accel_sensor_data = sensor_data.accel;
+                    float accel_sensor_data = sensor_data.accel_magnitude;
                     ESP_LOGI(TAG, "Accelerometer Sensor Data: %.6f", accel_sensor_data);
+#ifdef CONFIG_RESET_TIMER_ON_UPDATE
+                    reset_timer_deep_sleep();
+#endif
                 }
                 break;
             }
@@ -525,9 +535,8 @@ void fsm_control(void *pvParameters)
                 esp_wifi_deinit();
                 esp_timer_stop(deep_sleep_timer);
 
-
                 // Enter deep sleep
-                if (esp_sleep_enable_timer_wakeup(DEEP_SLEEP_TIMER_MS* 1000) == ESP_OK)
+                if (esp_sleep_enable_timer_wakeup(DEEP_SLEEP_TIMER_MS * 1000) == ESP_OK)
                 {
 #ifdef CONFIG_DEBUG_LOG
                     ESP_LOGI(TAG, "Going to sleep now");

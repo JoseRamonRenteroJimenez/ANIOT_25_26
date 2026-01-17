@@ -14,9 +14,11 @@
 static const char *TAG = "STHC3_Muestreador";
 
 static shtc3_t sensor;
-static i2c_master_bus_handle_t bus_handle;
+//static i2c_master_bus_handle_t bus_handle;
 static esp_event_loop_handle_t loop;
 static esp_timer_handle_t sampler_timer;
+static sthc3_data current_data;
+
 ESP_EVENT_DEFINE_BASE(SAMPLER_EVENT);
 
 static void sampler_timer_callback(void *arg);
@@ -58,7 +60,6 @@ void sampler_run(i2c_master_bus_handle_t bus, esp_event_loop_handle_t event_loop
 static void sampler_timer_callback(void *arg)
 {
     // Get sensor data
-    sthc3_data current_data;
     shtc3_get_temp_and_hum(&sensor, &current_data.temp_value, &current_data.hum_value);
 
     // Post event

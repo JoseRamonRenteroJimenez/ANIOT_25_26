@@ -12,15 +12,17 @@
 
 #include "i2c_bus.h"
 
-// -------- Event base --------
 ESP_EVENT_DECLARE_BASE(ACCEL_EVENT_BASE);
 
-// -------- Events --------
 typedef enum {
     ACCEL_EVENT_PERTURBATION = 1
 } accel_event_id_t;
 
-// -------- API --------
+typedef struct {
+    float accel_magnitude;
+} imu_data_t;
+
+
 esp_err_t ICM_42670_P_init(esp_event_loop_handle_t loop_handle);
 
 #endif
