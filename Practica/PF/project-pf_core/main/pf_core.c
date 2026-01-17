@@ -228,17 +228,19 @@ void shtc3_sampler_event_handler(void* arg, esp_event_base_t event_base, int32_t
     switch (event_id)
     {
     case NEW_DATA:
-        // Sensor data queue
-        sensors_data data2send;
-        sthc3_data sthc3_recived_data = *((sthc3_data *)event_data);
-        data2send.sthc3 = sthc3_recived_data;
-        if (xQueueSendToBack(sensorDataQueue, &data2send, portMAX_DELAY ) != pdPASS ){
-            ESP_LOGE(TAG, "Can't write in queue");
-        }
-        // Fsm event queue
-        fsm_event = FSM_SHTC3_DATA_IN_SENSOR_QUEUE;
-        if (xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY ) != pdPASS ){
-            ESP_LOGE(TAG, "Can't write in queue");
+        if(fsm_status == ACTIVE){
+            // Sensor data queue
+            sensors_data data2send;
+            sthc3_data sthc3_recived_data = *((sthc3_data *)event_data);
+            data2send.sthc3 = sthc3_recived_data;
+            if (xQueueSendToBack(sensorDataQueue, &data2send, portMAX_DELAY ) != pdPASS ){
+                ESP_LOGE(TAG, "Can't write in queue");
+            }
+            // Fsm event queue
+            fsm_event = FSM_SHTC3_DATA_IN_SENSOR_QUEUE;
+            if (xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY ) != pdPASS ){
+                ESP_LOGE(TAG, "Can't write in queue");
+            }
         }
         break;
     case SAMPLER_INIT:
@@ -351,6 +353,7 @@ void fsm_control( void * pvParameters ){
             case OTA_UPDATE: {
                 if (event == FSM_OTA_FAILURE){
                     ESP_LOGW(TAG, "OTA Failed -> Can't get image from HTTP server, returning to Active mode...");
+                    esp_timer_start_once(deep_sleep_timer, DEEP_SLEE_TIMER_MS * 1000);
                     fsm_status = ACTIVE;
                 }
                 else if (event == FSM_OTA_SUCCES){
