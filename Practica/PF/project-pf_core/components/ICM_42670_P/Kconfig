@@ -1,0 +1,7 @@
+menu "IMU Configuration"
+    
+    config MOVEMENT_THRESHOLD
+        int "Movement Threshold"
+        default 640000000
+
+endmenu

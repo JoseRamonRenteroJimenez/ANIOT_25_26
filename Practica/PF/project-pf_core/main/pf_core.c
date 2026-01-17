@@ -40,6 +40,7 @@ bool wifi_init = false;
 static bool wifi_driver_initialized = false;
 static bool ota_in_progress = false;
 static esp_pm_lock_handle_t ota_pm_lock = NULL;
+static bool wifi_started = false;
 
 static esp_timer_handle_t deep_sleep_timer;
 static void deep_sleep_timer_callback(void *arg);
@@ -206,7 +207,7 @@ bool check_components()
     for (int i = 0; i < COMPONENTS_START_TIMEOUT_ATTEMPS; i++)
     {
         // Check components status
-        if (shtc3_sampler_init && wifi_init)
+        if (shtc3_sampler_init && wifi_started)
         {
             return true;
         }
@@ -323,6 +324,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
         case WIFI_EVENT_STA_START:
             ESP_LOGI(TAG, "WiFi init, connecting...");
+            wifi_started = true;
             break;
 
         case WIFI_EVENT_STA_DISCONNECTED:
@@ -374,6 +376,15 @@ void accelerometer_event_handler(void *arg,
                                  int32_t id,
                                  void *event_data)
 {
+
+    if (fsm_status != ACTIVE)
+    {
+#ifdef CONFIG_DEBUG_LOG
+        ESP_LOGI("ACCEL", "Ignored accel event (FSM=%s)", fsm_status2str[fsm_status]);
+#endif
+        return;
+    }
+
     if (id == ACCEL_EVENT_PERTURBATION && event_data != NULL)
     {
 
@@ -693,8 +704,6 @@ void app_main(void)
         abort();
     }
 
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-
     //-- Events Definition
     //- Event loop init
     esp_event_loop_args_t loop_args = {
@@ -707,9 +716,13 @@ void app_main(void)
 
     //- Wifi event handler
     //-- Inicialización del wifi una única vez
-    // esp_netif_create_default_wifi_sta();
-    // ESP_ERROR_CHECK(esp_event_loop_create_default());
+    if (!wifi_sta_netif_exists())
+    {
+        ESP_LOGI(TAG, "Creating default WiFi STA netif");
+        esp_netif_create_default_wifi_sta();
+    }
 
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_event_handler_instance_t instance_wifi;
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,
