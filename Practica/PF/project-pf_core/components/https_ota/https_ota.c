@@ -22,7 +22,6 @@ static const char *TAG = "https_ota";
 extern const uint8_t server_cert_pem_start[] asm("_binary_ca_cert_pem_start");
 extern const uint8_t server_cert_pem_end[] asm("_binary_ca_cert_pem_end");
 
-
 esp_err_t https_ota_download(const https_ota_config_t *config)
 {
     // Default config
@@ -30,7 +29,7 @@ esp_err_t https_ota_download(const https_ota_config_t *config)
         .url = CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL,
         .cert_pem = (const char *)server_cert_pem_start,
         .skip_common_name_check = true,
-        .reboot_after_update = true,
+        .reboot_after_update = false,
         .timeout_ms = 100000,
     };
 
@@ -116,7 +115,7 @@ void app_main(void)
     //-- Wifi init
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    ESP_ERROR_CHECK(example_connect());
+    //ESP_ERROR_CHECK(example_connect());
 
     // Verify
     if(https_ota_is_pending_verify()){

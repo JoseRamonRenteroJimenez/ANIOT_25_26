@@ -37,6 +37,9 @@ QueueHandle_t fsmEventsQueue;
 QueueHandle_t sensorDataQueue;
 bool shtc3_sampler_init = false;
 bool wifi_init = false;
+static bool wifi_driver_initialized = false;
+static bool ota_in_progress = false;
+static esp_pm_lock_handle_t ota_pm_lock = NULL;
 
 static esp_timer_handle_t deep_sleep_timer;
 static void deep_sleep_timer_callback(void *arg);
@@ -58,7 +61,7 @@ esp_err_t init_pm()
 {
     // Configuración global de PM
     esp_pm_config_t pm_config = {
-        .max_freq_mhz = 240,
+        .max_freq_mhz = 160,
         .min_freq_mhz = 10, // Frecuencia de bajo consumo
         .light_sleep_enable = true};
 
@@ -89,21 +92,48 @@ esp_err_t init_nvs()
     return err;
 }
 
-esp_err_t init_wifi(esp_event_loop_handle_t loop_handle)
+static bool wifi_sta_netif_exists(void)
+{
+    return esp_netif_get_handle_from_ifkey("WIFI_STA_DEF") != NULL;
+}
+
+static esp_err_t ensure_wifi_netif(void)
+{
+    if (!wifi_sta_netif_exists())
+    {
+        ESP_LOGI(TAG, "Creating default WiFi STA netif");
+        esp_netif_create_default_wifi_sta();
+    }
+
+    return ESP_OK;
+}
+
+esp_err_t init_wifi()
 {
 
-    esp_err_t err = esp_netif_init();
-    if (err != ESP_OK)
-    {
-        return err;
-    }
-    esp_netif_create_default_wifi_sta();
+    // esp_err_t err = esp_netif_init();
+    // if (err != ESP_OK)
+    //{
+    //     return err;
+    // }
+    // esp_netif_create_default_wifi_sta();
+    //
+    // wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    // err = esp_wifi_init(&cfg);
+    // if (err != ESP_OK)
+    //{
+    //    return err;
+    //}
 
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    err = esp_wifi_init(&cfg);
-    if (err != ESP_OK)
+    esp_err_t err;
+
+    ESP_ERROR_CHECK(ensure_wifi_netif());
+
+    if (!wifi_driver_initialized)
     {
-        return err;
+        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+        wifi_driver_initialized = true;
     }
 
     wifi_config_t wifi_config = {
@@ -154,7 +184,7 @@ esp_err_t init_components(uint64_t sample_time, esp_event_loop_handle_t loop_han
 
     // Init components
     ESP_ERROR_CHECK(init_nvs());
-    ESP_ERROR_CHECK(init_wifi(loop_handle));
+    ESP_ERROR_CHECK(init_wifi());
     ESP_ERROR_CHECK(init_button(loop_handle));
     ESP_ERROR_CHECK(i2c_bus_init());
     ESP_ERROR_CHECK(ICM_42670_P_init(loop_handle));
@@ -297,7 +327,14 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
 
         case WIFI_EVENT_STA_DISCONNECTED:
             ESP_LOGW(TAG, "WiFi disconnected, retrying....");
-            init_wifi(loop_event_handle);
+            wifi_init = false;
+#ifdef CONFIG_DEBUG_LOG
+            ESP_LOGI(TAG, "WIFI_EVENT_STA_DISCONNECTED: (ota_in_progress=%d)", ota_in_progress);
+#endif
+            if (!ota_in_progress)
+            {
+                esp_wifi_connect();
+            }
             break;
 
         default:
@@ -337,7 +374,8 @@ void accelerometer_event_handler(void *arg,
                                  int32_t id,
                                  void *event_data)
 {
-    if (id == ACCEL_EVENT_PERTURBATION && event_data != NULL) {
+    if (id == ACCEL_EVENT_PERTURBATION && event_data != NULL)
+    {
 
         imu_data_t imu = *(imu_data_t *)event_data;
 
@@ -356,6 +394,9 @@ void fsm_control(void *pvParameters)
 {
 
     ESP_LOGI(TAG, "FSM Control Started...");
+#ifdef CONFIG_DEBUG_LOG
+    ESP_LOGI(TAG, "First state added - INIT");
+#endif
     fsm_status = INIT;
     fsm_events event;
     fsm_events fsm_event;
@@ -378,6 +419,9 @@ void fsm_control(void *pvParameters)
             {
                 if (event == FSM_COMPONENTS_INIT)
                 {
+#ifdef CONFIG_DEBUG_LOG
+                    ESP_LOGI(TAG, "FROM INIT to OTA_VALIDATION");
+#endif
                     fsm_status = OTA_VALIDATION;
                 }
                 break;
@@ -390,6 +434,9 @@ void fsm_control(void *pvParameters)
                     ESP_LOGI(TAG, "Diagnostic succesful. Markin image as valid");
                     https_ota_mark_valid();
                     fsm_status = ACTIVE;
+#ifdef CONFIG_DEBUG_LOG
+                    ESP_LOGI(TAG, "FROM OTA_VALIDATION to ACTIVE");
+#endif
                     esp_timer_stop(deep_sleep_timer);
                     esp_timer_start_once(deep_sleep_timer, DEEP_SLEEP_TIMER_MS * 1000);
                 }
@@ -407,9 +454,15 @@ void fsm_control(void *pvParameters)
                 {
                     esp_timer_stop(deep_sleep_timer);
                     fsm_status = OTA_UPDATE;
+#ifdef CONFIG_DEBUG_LOG
+                    ESP_LOGI(TAG, "FROM ACTIVE to OTA_UPDATE");
+#endif
                 }
                 else if (event == FSM_DEEP_SLEEP_START)
                 {
+#ifdef CONFIG_DEBUG_LOG
+                    ESP_LOGI(TAG, "FROM ACTIVE to DEEP_SLEEP");
+#endif
                     fsm_status = DEEP_SLEEP;
                 }
                 break;
@@ -420,6 +473,10 @@ void fsm_control(void *pvParameters)
                 if (event == FSM_OTA_FAILURE)
                 {
                     ESP_LOGW(TAG, "OTA Failed -> Can't get image from HTTP server, returning to Active mode...");
+                    esp_timer_start_once(deep_sleep_timer, DEEP_SLEEP_TIMER_MS * 1000);
+#ifdef CONFIG_DEBUG_LOG
+                    ESP_LOGI(TAG, "FROM OTA_UPDATE to ACTIVE");
+#endif
                     fsm_status = ACTIVE;
                 }
                 else if (event == FSM_OTA_SUCCES)
@@ -515,7 +572,35 @@ void fsm_control(void *pvParameters)
                 if (event == FSM_BUTTON_PRESS)
                 {
                     ESP_LOGI(TAG, "OTA Download");
+
+                    if (!wifi_has_ip())
+                    {
+                        ESP_LOGE(TAG, "OTA aborted: no IP");
+                        ota_in_progress = false;
+                        fsm_event = FSM_OTA_FAILURE;
+                        xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY);
+                        break;
+                    }
+
+                    esp_timer_stop(deep_sleep_timer);
+                    ota_in_progress = true;
+                    if (ota_pm_lock != NULL)
+                    {
+#ifdef CONFIG_DEBUG_LOG
+                        ESP_LOGI(TAG, "OTA_UPDATE: acquiring PM lock (disable light sleep)");
+#endif
+                        esp_pm_lock_acquire(ota_pm_lock);
+                    }
                     esp_err_t err = https_ota_download(NULL);
+                    if (ota_pm_lock != NULL)
+                    {
+#ifdef CONFIG_DEBUG_LOG
+                        ESP_LOGI(TAG, "OTA_UPDATE: PM lock released (light sleep restored)");
+#endif
+                        esp_pm_lock_release(ota_pm_lock);
+                    }
+
+                    ota_in_progress = false;
                     ESP_LOGI(TAG, "OTA Result: %d", err);
                     fsm_event = (err == ESP_OK) ? FSM_OTA_SUCCES : FSM_OTA_FAILURE;
                     if (xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY) != pdPASS)
@@ -531,8 +616,12 @@ void fsm_control(void *pvParameters)
                 ESP_LOGI(TAG, "Entering deep sleep for %lu ms", DEEP_SLEEP_TIMER_MS);
 
                 // Prepare for deep sleep
-                esp_wifi_stop();
-                esp_wifi_deinit();
+                if (!ota_in_progress && !https_ota_is_pending_verify())
+                {
+                    esp_wifi_stop();
+                }
+
+                // esp_wifi_deinit();
                 esp_timer_stop(deep_sleep_timer);
 
                 // Enter deep sleep
@@ -579,6 +668,16 @@ void app_main(void)
     //-- Inicialización del PM
     ESP_ERROR_CHECK(init_pm());
 
+    ESP_ERROR_CHECK(
+        esp_pm_lock_create(
+            ESP_PM_NO_LIGHT_SLEEP,
+            0,
+            "ota_no_light_sleep",
+            &ota_pm_lock));
+
+    //-- Inicialización del wifi
+    ESP_ERROR_CHECK(esp_netif_init());
+
     //-- Queues init
 
     fsmEventsQueue = xQueueCreate(QUEUE_DEF_SIZE, sizeof(fsm_events));
@@ -594,6 +693,8 @@ void app_main(void)
         abort();
     }
 
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+
     //-- Events Definition
     //- Event loop init
     esp_event_loop_args_t loop_args = {
@@ -605,7 +706,10 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_loop_create(&loop_args, &loop_event_handle));
 
     //- Wifi event handler
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    //-- Inicialización del wifi una única vez
+    // esp_netif_create_default_wifi_sta();
+    // ESP_ERROR_CHECK(esp_event_loop_create_default());
+
     esp_event_handler_instance_t instance_wifi;
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
                                                         ESP_EVENT_ANY_ID,

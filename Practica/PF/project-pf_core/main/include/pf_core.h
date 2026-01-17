@@ -58,7 +58,7 @@ typedef struct{
 //-- Utils
 esp_err_t init_shtc3_sampler(uint64_t sample_time, esp_event_loop_handle_t loop_handle);
 esp_err_t init_nvs();
-esp_err_t init_wifi(esp_event_loop_handle_t loop_handle);
+esp_err_t init_wifi();
 esp_err_t init_button(esp_event_loop_handle_t loop_handle);
 esp_err_t init_accelerometer(esp_event_loop_handle_t loop_handle);
 esp_err_t init_components(uint64_t sample_time, esp_event_loop_handle_t loop_handle);
