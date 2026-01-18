@@ -501,7 +501,7 @@ CONFIG_PARTITION_TABLE_MD5=y
 #
 CONFIG_SAMPLER_PERIOD_MS=1000
 CONFIG_DEPP_SLEEP_TIME_MS=6000
-CONFIG_DEBUG_LOG=y
+# CONFIG_DEBUG_LOG is not set
 # end of PF Core Configuration
 
 #
@@ -512,6 +512,13 @@ CONFIG_EXAMPLE_FIRMWARE_UPGRADE_URL="https://10.71.162.67:8000/project-pf_core.b
 CONFIG_EXAMPLE_USE_CERT_BUNDLE=y
 CONFIG_EXAMPLE_SKIP_COMMON_NAME_CHECK=y
 # end of HTTPS OTA
+
+#
+# I2C_BUS Configuration
+#
+CONFIG_I2C_SCL_GPIO=8
+CONFIG_I2C_SDA_GPIO=10
+# end of I2C_BUS Configuration
 
 #
 # Example Connection Configuration
@@ -1824,6 +1831,12 @@ CONFIG_VFS_SEMIHOSTFS_MAX_MOUNT_POINTS=1
 
 CONFIG_VFS_INITIALIZE_DEV_NULL=y
 # end of Virtual file system
+
+#
+# IMU Configuration
+#
+CONFIG_MOVEMENT_THRESHOLD=640000000
+# end of IMU Configuration
 
 #
 # SHTC3 Configuration

@@ -19,11 +19,12 @@
 #include "ICM_42670_P.h"
 #include "esp_pm.h"
 #include "i2c_bus.h"
+#include "esp_sleep.h"
 
 #define WIFI_SSID CONFIG_EXAMPLE_WIFI_SSID
 #define WIFI_PSW CONFIG_EXAMPLE_WIFI_PASSWORD
 #define SAMPLER_PERIOD_MS CONFIG_SAMPLER_PERIOD_MS
-#define DEEP_SLEE_TIMER_MS CONFIG_DEPP_SLEEP_TIME_MS
+#define DEEP_SLEEP_TIMER_MS CONFIG_DEPP_SLEEP_TIME_MS
 #define DIAGNOSTIC_WIFI_MAX_GET_IP_TIME 100000
 #define DIAGNOSTIC_WIFI_DELAY_STEP_TIME 1000
 #define COMPONENTS_START_TIMEOUT_ATTEMPS 60
@@ -57,6 +58,22 @@ esp_err_t init_shtc3_sampler(uint64_t sample_time, esp_event_loop_handle_t loop_
 
     int ret = set_i2c(bus);
     sampler_run(loop_handle, sample_time);
+    return ret;
+}
+
+esp_err_t init_pm()
+{
+    // Configuración global de PM
+    esp_pm_config_t pm_config = {
+        .max_freq_mhz = 160,
+        .min_freq_mhz = 10, // Frecuencia de bajo consumo
+        .light_sleep_enable = true};
+
+    esp_err_t ret = esp_pm_configure(&pm_config);
+    if (ret != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Error configuring PM");
+    }
     return ret;
 }
 
@@ -365,7 +382,7 @@ void fsm_control( void * pvParameters ){
                     https_ota_mark_valid();
                     fsm_status = ACTIVE;
                     esp_timer_stop(deep_sleep_timer);
-                    esp_timer_start_once(deep_sleep_timer, DEEP_SLEE_TIMER_MS * 1000);
+                    esp_timer_start_once(deep_sleep_timer, DEEP_SLEEP_TIMER_MS * 1000);
                 }
                 else if (event == FSM_INVALID_OTA_IMG){
                     ESP_LOGI(TAG, "Diagnostic failed. Marking image as invalid and rebooting...");
@@ -382,7 +399,7 @@ void fsm_control( void * pvParameters ){
                 else if (event == FSM_DEEP_SLEEP_START){
                     fsm_status = DEEP_SLEEP;
                     esp_timer_stop(deep_sleep_timer);
-                    esp_timer_start_once(deep_sleep_timer, DEEP_SLEE_TIMER_MS * 1000);
+                    esp_timer_start_once(deep_sleep_timer, DEEP_SLEEP_TIMER_MS * 1000);
                 }
                 break;
             }
@@ -390,7 +407,7 @@ void fsm_control( void * pvParameters ){
             case OTA_UPDATE: {
                 if (event == FSM_OTA_FAILURE){
                     ESP_LOGW(TAG, "OTA Failed -> Can't get image from HTTP server, returning to Active mode...");
-                    esp_timer_start_once(deep_sleep_timer, DEEP_SLEE_TIMER_MS * 1000);
+                    esp_timer_start_once(deep_sleep_timer, DEEP_SLEEP_TIMER_MS * 1000);
                     fsm_status = ACTIVE;
                 }
                 else if (event == FSM_OTA_SUCCES){
@@ -403,7 +420,7 @@ void fsm_control( void * pvParameters ){
                 if (event == FSM_DEEP_SLEEP_STOP){
                     fsm_status = ACTIVE;
                     esp_timer_stop(deep_sleep_timer);
-                    esp_timer_start_once(deep_sleep_timer, DEEP_SLEE_TIMER_MS * 1000);
+                    esp_timer_start_once(deep_sleep_timer, DEEP_SLEEP_TIMER_MS * 1000);
                 }
                 break;
             }
@@ -455,7 +472,7 @@ void fsm_control( void * pvParameters ){
                 else if (event == FSM_ACCEL_DATA_IN_SENSOR_QUEUE &&
                     xQueueReceive(sensorDataQueue, &sensor_data, 0)){
                     float accel_sensor_data = sensor_data.accel_magnitude;
-                    ESP_LOGI(TAG, "Accelerometer Sensor Data: %.6f", accel_sensor_data);
+                    ESP_LOGI(TAG, "Accelerometer Sensor Data: %.6f G", accel_sensor_data);
                 }
                 break;
             }
@@ -474,8 +491,27 @@ void fsm_control( void * pvParameters ){
             }
 
             case DEEP_SLEEP: {
-                if (event == FSM_DEEP_SLEEP_START){
-                    ESP_LOGI(TAG, "DEEP SLEEP: TODO");
+                ESP_LOGI(TAG, "Entering deep sleep for %lu ms", DEEP_SLEEP_TIMER_MS);
+
+                // Prepare for deep sleep
+                if (!ota_in_progress && !https_ota_is_pending_verify())
+                {
+                    esp_wifi_stop();
+                }
+
+                // esp_wifi_deinit();
+                esp_timer_stop(deep_sleep_timer);
+
+                // Enter deep sleep
+                if (esp_sleep_enable_timer_wakeup(DEEP_SLEEP_TIMER_MS * 1000) == ESP_OK)
+                {
+                    ESP_LOGI(TAG, "Going to sleep now");
+                    esp_deep_sleep_start();
+                    // The program will restart from app_main after waking up
+                }
+                else
+                {
+                    ESP_LOGE(TAG, "Deep sleep timer configuration failed");
                 }
                 break;
             }

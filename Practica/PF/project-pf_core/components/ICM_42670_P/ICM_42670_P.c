@@ -54,8 +54,8 @@ static esp_err_t icm42670_init(i2c_master_bus_handle_t bus)
     if (ret != ESP_OK) return ret;
 
     const icm42670_cfg_t cfg = {
-        .acce_fs  = ACCE_FS_2G,
-        .acce_odr = ACCE_ODR_400HZ,
+        .acce_fs  = ACCE_FS_4G,
+        .acce_odr = ACCE_ODR_100HZ,
         .gyro_fs  = GYRO_FS_2000DPS,
         .gyro_odr = GYRO_ODR_400HZ,
     };

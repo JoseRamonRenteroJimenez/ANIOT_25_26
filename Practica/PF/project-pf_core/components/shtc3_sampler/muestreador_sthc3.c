@@ -37,7 +37,7 @@ void sthc3_to_string(const sthc3_data *data, char *out_str, size_t max_len)
         return;
 
     snprintf(out_str, max_len,
-             "{ \"temp\": %.2f, \"hum\": %.2f }",
+             "{ \"temp\": %.2f ºC, \"hum\": %.2f %%}",
              data->temp_value, data->hum_value);
 }
 
