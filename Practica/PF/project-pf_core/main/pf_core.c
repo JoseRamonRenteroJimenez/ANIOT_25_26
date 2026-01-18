@@ -30,7 +30,6 @@
 #define COMPONENTS_START_TIMEOUT_ATTEMPS 60
 #define COMPONENTS_START_TIMEOUT_ATTEMP_TIME_MS 1000 // 1 seg
 
-
 //-- Global Vars
 static const char *TAG = "PF_CORE";
 fsm_status_t fsm_status;
@@ -39,9 +38,6 @@ QueueHandle_t fsmEventsQueue;
 QueueHandle_t sensorDataQueue;
 bool shtc3_sampler_init = false;
 bool wifi_init = false;
-
-static bool ota_in_progress = false;
-static esp_pm_lock_handle_t ota_pm_lock = NULL;
 
 static esp_timer_handle_t deep_sleep_timer;
 static void deep_sleep_timer_callback(void *arg);
@@ -66,7 +62,7 @@ esp_err_t init_pm()
     // Configuración global de PM
     esp_pm_config_t pm_config = {
         .max_freq_mhz = 160,
-        .min_freq_mhz = 10, // Frecuencia de bajo consumo
+        .min_freq_mhz = 40, // Frecuencia de bajo consumo
         .light_sleep_enable = true};
 
     esp_err_t ret = esp_pm_configure(&pm_config);
@@ -288,7 +284,7 @@ static void wifi_event_handler(void *arg,esp_event_base_t event_base, int32_t ev
 
         case WIFI_EVENT_STA_DISCONNECTED:
             ESP_LOGW(TAG, "WiFi disconnected, retrying....");
-            init_wifi(loop_event_handle);
+            esp_wifi_connect();
             break;
 
         default:
@@ -308,11 +304,13 @@ void button_event_handler(void* arg, esp_event_base_t base, int32_t id, void* da
     fsm_events fsm_event;
     switch (id) {
         case BUTTON_EVENT_PRESSED:
+        if(fsm_status == ACTIVE){
             ESP_LOGI(TAG, "Button Pressed");
             fsm_event = FSM_BUTTON_PRESS;
             if (xQueueSendToBack(fsmEventsQueue, &fsm_event, portMAX_DELAY ) != pdPASS ){
                 ESP_LOGE(TAG, "Can't write in queue");
             }
+        }
             break;
         case BUTTON_EVENT_RELEASED:
             ESP_LOGI(TAG, "Button Released");
@@ -494,11 +492,8 @@ void fsm_control( void * pvParameters ){
                 ESP_LOGI(TAG, "Entering deep sleep for %lu ms", DEEP_SLEEP_TIMER_MS);
 
                 // Prepare for deep sleep
-                if (!ota_in_progress && !https_ota_is_pending_verify())
-                {
-                    esp_wifi_stop();
-                }
-
+                esp_wifi_stop();
+            
                 // esp_wifi_deinit();
                 esp_timer_stop(deep_sleep_timer);
 
@@ -539,6 +534,9 @@ void fsm_control( void * pvParameters ){
 void app_main(void)
 {
     ESP_LOGI(TAG, "PF_CORE Start (V1.1)");
+
+    // Pm start
+    ESP_ERROR_CHECK(init_pm());
 
     //-- Queues init
     fsmEventsQueue = xQueueCreate( QUEUE_DEF_SIZE, sizeof( fsm_events ) );

@@ -6,7 +6,7 @@
 
 static const char *TAG = "ICM_42670_P";
 
-#define TIMER_PERIOD_US   (100 * 1000)   // 100 ms
+#define TIMER_PERIOD_US   (300 * 1000)   // 100 ms
 #define ACCEL_THRESHOLD_G 1.5f
 
 ESP_EVENT_DEFINE_BASE(ACCEL_EVENT_BASE);
