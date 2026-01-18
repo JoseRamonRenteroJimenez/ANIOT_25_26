@@ -514,6 +514,13 @@ CONFIG_EXAMPLE_SKIP_COMMON_NAME_CHECK=y
 # end of HTTPS OTA
 
 #
+# I2C_BUS Configuration
+#
+CONFIG_I2C_SCL_GPIO=8
+CONFIG_I2C_SDA_GPIO=10
+# end of I2C_BUS Configuration
+
+#
 # Example Connection Configuration
 #
 CONFIG_ENV_GPIO_RANGE_MIN=0
@@ -1824,6 +1831,12 @@ CONFIG_VFS_SEMIHOSTFS_MAX_MOUNT_POINTS=1
 
 CONFIG_VFS_INITIALIZE_DEV_NULL=y
 # end of Virtual file system
+
+#
+# IMU Configuration
+#
+CONFIG_MOVEMENT_THRESHOLD=640000000
+# end of IMU Configuration
 
 #
 # SHTC3 Configuration

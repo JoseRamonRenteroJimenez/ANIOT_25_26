@@ -26,6 +26,11 @@ int init_i2c(i2c_master_bus_config_t conf) {
     return ret;
 }
 
+int set_i2c(i2c_master_bus_handle_t bus) {
+    int ret = shtc3_init(&sensor, bus, 0x70);
+    return ret;
+}
+
 void sthc3_to_string(const sthc3_data *data, char *out_str, size_t max_len)
 {
     if (data == NULL || out_str == NULL || max_len == 0)

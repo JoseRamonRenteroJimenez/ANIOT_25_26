@@ -1,0 +1,11 @@
+menu "I2C_BUS Configuration"
+
+    config I2C_SCL_GPIO
+        int "PIN SCL" 
+        default 8
+    
+    config I2C_SDA_GPIO
+        int "PIN SDA" 
+        default 10
+
+endmenu

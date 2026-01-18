@@ -16,6 +16,9 @@
 #include "button.h"
 #include "https_ota.h"
 #include "pf_core.h"
+#include "ICM_42670_P.h"
+#include "esp_pm.h"
+#include "i2c_bus.h"
 
 #define WIFI_SSID CONFIG_EXAMPLE_WIFI_SSID
 #define WIFI_PSW CONFIG_EXAMPLE_WIFI_PASSWORD
@@ -36,22 +39,23 @@ QueueHandle_t sensorDataQueue;
 bool shtc3_sampler_init = false;
 bool wifi_init = false;
 
+static bool ota_in_progress = false;
+static esp_pm_lock_handle_t ota_pm_lock = NULL;
+
 static esp_timer_handle_t deep_sleep_timer;
 static void deep_sleep_timer_callback(void *arg);
 int sleep_mode = 0; // active = 0, deep_sleep = 1
 
 // -------------- Utils -------------- //
-esp_err_t init_shtc3_sampler(uint64_t sample_time, esp_event_loop_handle_t loop_handle){
-    // Sampler init
-    i2c_master_bus_config_t i2c_bus_config = {
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .i2c_port = I2C_NUM_0,
-        .scl_io_num = 8,
-        .sda_io_num = 10,
-        .glitch_ignore_cnt = 7,
-        .flags.enable_internal_pullup = true,
-    };
-    int ret = init_i2c(i2c_bus_config);
+esp_err_t init_shtc3_sampler(uint64_t sample_time, esp_event_loop_handle_t loop_handle)
+{
+    i2c_master_bus_handle_t bus = i2c_bus_get();
+    if (bus == NULL)
+    {
+        return ESP_FAIL;
+    }
+
+    int ret = set_i2c(bus);
     sampler_run(loop_handle, sample_time);
     return ret;
 }
@@ -73,6 +77,9 @@ esp_err_t init_nvs(){
 }
 
 esp_err_t init_wifi(esp_event_loop_handle_t loop_handle){
+
+    
+    if (wifi_init) return ESP_OK;
 
     esp_err_t err = esp_netif_init();
     if (err != ESP_OK){
@@ -120,8 +127,8 @@ esp_err_t init_button(esp_event_loop_handle_t loop_handle){
 }
 
 esp_err_t init_accelerometer(esp_event_loop_handle_t loop_handle){
-    // TODO
-    return ESP_OK;
+    esp_err_t ret = ICM_42670_P_init(loop_handle);
+    return ret;
 }
 
 esp_err_t init_components(uint64_t sample_time, esp_event_loop_handle_t loop_handle){
@@ -130,9 +137,10 @@ esp_err_t init_components(uint64_t sample_time, esp_event_loop_handle_t loop_han
     ESP_ERROR_CHECK(init_nvs());
     ESP_ERROR_CHECK(init_wifi(loop_handle));
     ESP_ERROR_CHECK(init_button(loop_handle));
+    ESP_ERROR_CHECK(i2c_bus_init());
     ESP_ERROR_CHECK(init_accelerometer(loop_handle));
     ESP_ERROR_CHECK(init_shtc3_sampler(sample_time, loop_handle));
-
+    
     // Create deep sleep timer
     const esp_timer_create_args_t deep_sleep_timer_args = {
         .callback = &deep_sleep_timer_callback,
@@ -295,6 +303,35 @@ void button_event_handler(void* arg, esp_event_base_t base, int32_t id, void* da
     }
 }
 
+void accelerometer_event_handler(void *arg,
+                                 esp_event_base_t base,
+                                 int32_t id,
+                                 void *event_data)
+{
+
+    if (fsm_status != ACTIVE)
+    {
+#ifdef CONFIG_DEBUG_LOG
+        ESP_LOGI("ACCEL", "Ignored accel event (FSM=%s)", fsm_status2str[fsm_status]);
+#endif
+        return;
+    }
+
+    if (id == ACCEL_EVENT_PERTURBATION && event_data != NULL)
+    {
+
+        imu_data_t imu = *(imu_data_t *)event_data;
+
+        sensors_data data2send = {0};
+        data2send.accel_magnitude = imu.accel_magnitude;
+
+        xQueueSendToBack(sensorDataQueue, &data2send, portMAX_DELAY);
+
+        fsm_events ev = FSM_ACCEL_DATA_IN_SENSOR_QUEUE;
+        xQueueSendToBack(fsmEventsQueue, &ev, portMAX_DELAY);
+    }
+}
+
 // -------------- Tasks -------------- //
 void fsm_control( void * pvParameters ){
 
@@ -417,7 +454,7 @@ void fsm_control( void * pvParameters ){
                 }
                 else if (event == FSM_ACCEL_DATA_IN_SENSOR_QUEUE &&
                     xQueueReceive(sensorDataQueue, &sensor_data, 0)){
-                    float accel_sensor_data = sensor_data.accel;
+                    float accel_sensor_data = sensor_data.accel_magnitude;
                     ESP_LOGI(TAG, "Accelerometer Sensor Data: %.6f", accel_sensor_data);
                 }
                 break;
@@ -465,7 +502,7 @@ void fsm_control( void * pvParameters ){
 
 void app_main(void)
 {
-    ESP_LOGI(TAG, "PF_CORE Start");
+    ESP_LOGI(TAG, "PF_CORE Start (V1.1)");
 
     //-- Queues init
     fsmEventsQueue = xQueueCreate( QUEUE_DEF_SIZE, sizeof( fsm_events ) );
@@ -516,6 +553,16 @@ void app_main(void)
                                                             &button_event_handler,
                                                             NULL,
                                                             &instance_button)); 
+
+    //- Accelerometer event handler
+    esp_event_handler_instance_t instance_accel;
+    ESP_ERROR_CHECK(
+        esp_event_handler_instance_register_with(loop_event_handle,
+                                                 ACCEL_EVENT_BASE,
+                                                 ESP_EVENT_ANY_ID,
+                                                 &accelerometer_event_handler,
+                                                 NULL,
+                                                 &instance_accel));
 
     //-- Start FSM Tasks
     TaskHandle_t fsmTaskHandle = NULL;

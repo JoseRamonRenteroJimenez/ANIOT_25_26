@@ -52,7 +52,7 @@ const char* fsm_events2str[] = {
 // Sensors Data
 typedef struct{
     sthc3_data sthc3;
-    float accel;
+    float accel_magnitude;
 }sensors_data;
 
 //-- Utils
