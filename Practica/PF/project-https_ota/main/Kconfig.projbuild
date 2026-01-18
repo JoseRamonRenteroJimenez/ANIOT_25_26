@@ -1,0 +1,32 @@
+menu "HTTPS OTA"
+
+    config EXAMPLE_HTTPS_OTA_TEST
+        bool "Enable HTTPS OTA example"
+        default n
+        help
+            Enable this option if you are testing this component individually.
+            Disable it if you are integrating it into a larger project.
+
+    config EXAMPLE_FIRMWARE_UPGRADE_URL
+        string "firmware upgrade url endpoint"
+        default "https://10.71.162.67/project-https_ota_component_test.bin"
+        help
+            URL of server which hosts the firmware
+            image.
+
+    config EXAMPLE_USE_CERT_BUNDLE
+        bool "Enable certificate bundle"
+        default y
+        depends on MBEDTLS_CERTIFICATE_BUNDLE
+        help
+            Enable trusted root certificate bundle. This approach allows to have
+            OTA updates functional with any public server without requirement
+            to explicitly add its server certificate.
+
+    config EXAMPLE_SKIP_COMMON_NAME_CHECK
+        bool "Skip server certificate CN fieldcheck"
+        default n
+        help
+            This allows you to skip the validation of OTA server certificate CN field.
+
+endmenu

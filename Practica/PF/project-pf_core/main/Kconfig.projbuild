@@ -1,0 +1,27 @@
+menu "PF Core Configuration"
+
+    config SAMPLER_PERIOD_MS
+        int "Sampler period in ms"
+        range 400 3600000
+        default 1000
+        help
+            Define the period in milliseconds between each sample taken by the STHC Monitorization module.
+    
+
+    config DEPP_SLEEP_TIME_MS
+        int "Deep Sleep time in ms"
+        range 1000 3600000
+        default 600000
+        help
+            Define the time in milliseconds that the device will stay in deep sleep mode between each active period.
+
+    config DEBUG_LOG
+        bool "Enable debug logs"
+        default n
+        help
+            Enable this option to activate debug logging for the PF Core Module. 
+            Show FSM Status transitions and other debugging relevant data.
+    
+    
+    
+endmenu
